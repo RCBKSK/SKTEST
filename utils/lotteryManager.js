@@ -5,10 +5,10 @@ class LotteryManager {
     constructor() {
         this.lotteries = new Map();
         this.loadData();
-        
+
         // Save data every 2 minutes
         setInterval(() => this.saveData(), 2 * 60 * 1000);
-        
+
         // Pull data from GitHub on startup to restore state
         this.restoreData();
     }
@@ -45,12 +45,12 @@ class LotteryManager {
             serializedLottery.participants = Object.fromEntries(lottery.participants);
             data[id] = serializedLottery;
         }
-        
-        console.log('Data to be saved:', data); // Log the data to check if it has contents
-        
-        // Only save if there is data
+
+        console.log('Data to be saved:', data);
+
         if (Object.keys(data).length > 0) {
             dataManager.saveData('lotteries.json', data);
+            dataManager.saveLocalBackup(); // Immediate backup
         } else {
             console.log('No lotteries to save.');
         }
