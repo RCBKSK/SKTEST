@@ -89,72 +89,42 @@ client.on("messageCreate", async (message) => {
 
     try {
         if (message.author.id !== client.user.id) {
-            await message.react('🇪🇸');
-            await message.react('🇫🇷');
-            await message.react('🇩🇪');
-            await message.react('🇯🇵');
+            await message.react('🔤');
         }
     } catch (error) {
-        console.error("Error adding translation reactions:", error);
+        console.error("Error adding translation reaction:", error);
     }
 });
 
 client.on('messageReactionAdd', async (reaction, user) => {
-    if (user.bot) return;
-
-    const flagToLang = {
-        '🇪🇸': 'es',
-        '🇫🇷': 'fr',
-        '🇩🇪': 'de',
-        '🇯🇵': 'ja'
-    };
-
-    const targetLang = flagToLang[reaction.emoji.name];
-    if (!targetLang) return;
+    if (user.bot || reaction.emoji.name !== '🔤') return;
 
     try {
+        const userLang = languageManager.getUserPreference(user.id);
+        if (userLang === 'en') {
+            const channel = reaction.message.channel;
+            await channel.send({
+                content: `<@${user.id}> Please set your preferred language first using /setlanguage`,
+                ephemeral: true
+            });
+            await reaction.users.remove(user);
+            return;
+        }
+
         const translated = await languageManager.translateMessage(
             reaction.message.content,
-            targetLang
+            userLang
         );
 
         if (translated && translated.toLowerCase() !== reaction.message.content.toLowerCase()) {
             const channel = reaction.message.channel;
             await channel.send({
-                content: `<@${user.id}> Translation to ${targetLang.toUpperCase()}: ${translated}`,
-                ephemeral: true
+                content: `<@${user.id}> Translation to ${userLang.toUpperCase()}: ${translated}`
             });
         }
-        // Remove user's reaction
         await reaction.users.remove(user);
     } catch (error) {
         console.error("Translation error:", error);
-    }
-        
-        try {
-            const translated = await languageManager.translateMessage(
-                message.content,
-                targetLang
-            );
-
-            if (translated && translated.toLowerCase() !== message.content.toLowerCase()) {
-                await interaction.reply({
-                    content: `Translation to ${targetLang.toUpperCase()}: ${translated}`,
-                    ephemeral: true
-                });
-            } else {
-                await interaction.reply({
-                    content: 'No translation needed or translation failed.',
-                    ephemeral: true
-                });
-            }
-        } catch (error) {
-            console.error("Translation error:", error);
-            await interaction.reply({
-                content: 'Failed to translate the message.',
-                ephemeral: true
-            });
-        }
     }
 });
 
