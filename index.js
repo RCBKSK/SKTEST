@@ -89,42 +89,47 @@ client.on("messageCreate", async (message) => {
 
     try {
         if (message.author.id !== client.user.id) {
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('translate_es')
-                        .setLabel('🇪🇸 Spanish')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId('translate_fr')
-                        .setLabel('🇫🇷 French')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId('translate_de')
-                        .setLabel('🇩🇪 German')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId('translate_ja')
-                        .setLabel('🇯🇵 Japanese')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            await message.reply({
-                content: '**Choose a language to translate to:**',
-                components: [row],
-            });
+            await message.react('🇪🇸');
+            await message.react('🇫🇷');
+            await message.react('🇩🇪');
+            await message.react('🇯🇵');
         }
     } catch (error) {
-        console.error("Error creating translation buttons:", error);
+        console.error("Error adding translation reactions:", error);
     }
 });
 
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    
-    if (interaction.customId.startsWith('translate_')) {
-        const targetLang = interaction.customId.split('_')[1];
-        const message = await interaction.message.fetchReference();
+client.on('messageReactionAdd', async (reaction, user) => {
+    if (user.bot) return;
+
+    const flagToLang = {
+        '🇪🇸': 'es',
+        '🇫🇷': 'fr',
+        '🇩🇪': 'de',
+        '🇯🇵': 'ja'
+    };
+
+    const targetLang = flagToLang[reaction.emoji.name];
+    if (!targetLang) return;
+
+    try {
+        const translated = await languageManager.translateMessage(
+            reaction.message.content,
+            targetLang
+        );
+
+        if (translated && translated.toLowerCase() !== reaction.message.content.toLowerCase()) {
+            const channel = reaction.message.channel;
+            await channel.send({
+                content: `<@${user.id}> Translation to ${targetLang.toUpperCase()}: ${translated}`,
+                ephemeral: true
+            });
+        }
+        // Remove user's reaction
+        await reaction.users.remove(user);
+    } catch (error) {
+        console.error("Translation error:", error);
+    }
         
         try {
             const translated = await languageManager.translateMessage(
