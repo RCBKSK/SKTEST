@@ -85,14 +85,21 @@ client.once("ready", () => {
 const languageManager = require("./utils/languageManager");
 
 client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
-    if (message.content.trim() === "") return;
+    // Don't react to bot messages or empty messages
+    if (message.author.bot || message.content.trim() === "") return;
 
-    // Add translation reaction emoji
-    await message.react('🌐');
+    try {
+        // Only add reaction if message is not from the bot itself
+        if (message.author.id !== client.user.id) {
+            await message.react('🌐');
+        }
+    } catch (error) {
+        console.error("Error adding translation reaction:", error);
+    }
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
+    // Ignore bot reactions and non-globe reactions
     if (user.bot) return;
     if (reaction.emoji.name !== '🌐') return;
 
@@ -101,7 +108,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     try {
         const userLang = languageManager.getUserPreference(user.id);
-        if (!userLang || userLang === 'en') return;
+        // Only translate if user has a non-English language preference
+        if (!userLang) {
+            await message.channel.send({
+                content: `<@${user.id}>, please set your preferred language using /setlanguage first!`,
+                ephemeral: true
+            });
+            return;
+        }
+
+        if (userLang === 'en') return;
 
         const translated = await languageManager.translateMessage(
             message.content,
