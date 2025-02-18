@@ -1,3 +1,4 @@
+
 const { Collection } = require('discord.js');
 const dataManager = require('./dataManager');
 
@@ -11,17 +12,6 @@ class SkullManager {
         
         // Restore data on startup
         this.restoreData();
-
-    async restoreData() {
-        try {
-            await dataManager.pullFromGitHub();
-            this.loadData();
-            console.log('✅ Skull data restored from GitHub');
-        } catch (error) {
-            console.error('❌ Failed to restore skull data:', error);
-        }
-    }
-
     }
 
     loadData() {
@@ -30,6 +20,16 @@ class SkullManager {
             Object.entries(data).forEach(([userId, balance]) => {
                 this.userBalances.set(userId, balance);
             });
+        }
+    }
+
+    async restoreData() {
+        try {
+            await dataManager.pullFromGitHub();
+            this.loadData();
+            console.log('✅ Skull data restored from GitHub');
+        } catch (error) {
+            console.error('❌ Failed to restore skull data:', error);
         }
     }
 
