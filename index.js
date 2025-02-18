@@ -19,6 +19,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildMessageReactions,
     ],
     partials: [Partials.Channel],
 });
@@ -88,11 +89,20 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot || reaction.emoji.name !== '🔤') return;
 
     try {
+        // Fetch the complete reaction if it's partial
+        if (reaction.partial) {
+            await reaction.fetch();
+        }
+
+        // Fetch the complete message if needed
+        if (reaction.message.partial) {
+            await reaction.message.fetch();
+        }
+
         const userLang = languageManager.getUserPreference(user.id);
         if (!userLang || userLang === 'en') {
             await reaction.message.channel.send({
-                content: `<@${user.id}> Please set your preferred language first using /setlanguage`,
-                ephemeral: true
+                content: `<@${user.id}> Please set your preferred language first using /setlanguage`
             });
             return;
         }
@@ -106,10 +116,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
         );
 
         if (translated && translated.toLowerCase() !== messageContent.toLowerCase()) {
-            const translationMessage = await reaction.message.channel.send({
+            await reaction.message.channel.send({
                 content: `<@${user.id}> Translation to ${userLang.toUpperCase()}: ${translated}`
             });
-            setTimeout(() => translationMessage.delete().catch(console.error), 10000); // Delete after 10 seconds
         }
     } catch (error) {
         console.error("Translation error:", error);
