@@ -116,9 +116,20 @@ client.on('messageReactionAdd', async (reaction, user) => {
         );
 
         if (translated && translated.toLowerCase() !== messageContent.toLowerCase()) {
-            await reaction.message.channel.send({
+            const translationMsg = await reaction.message.channel.send({
                 content: `<@${user.id}> Translation to ${userLang.toUpperCase()}: ${translated}`
             });
+            
+            // Delete translation message after 10 seconds
+            setTimeout(async () => {
+                try {
+                    if (translationMsg.deletable) {
+                        await translationMsg.delete();
+                    }
+                } catch (error) {
+                    console.error("Error deleting translation message:", error);
+                }
+            }, 10000);
         }
     } catch (error) {
         console.error("Translation error:", error);
