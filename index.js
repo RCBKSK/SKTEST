@@ -86,50 +86,44 @@ const languageManager = require("./utils/languageManager");
 
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
-
-    // Check if message needs translation
     if (message.content.trim() === "") return;
 
-    const originalLang = "en"; // Assuming original messages are in English
-    const members = await message.guild.members.fetch();
+    // Add translation reaction emoji
+    await message.react('🌐');
+});
 
-    // For each member with a different language preference, send them the translation
-    for (const [memberId, member] of members) {
-        // Skip the message author and bots
-        if (memberId === message.author.id || member.user.bot) continue;
+client.on("messageReactionAdd", async (reaction, user) => {
+    if (user.bot) return;
+    if (reaction.emoji.name !== '🌐') return;
 
-        const userLang = languageManager.getUserPreference(memberId);
-        // Only translate if user has set a language preference different from original
-        if (userLang && userLang !== originalLang) {
-            try {
-                const translated = await languageManager.translateMessage(
-                    message.content,
-                    userLang,
-                );
-                // Only send if translation is different from original
-                if (
-                    translated &&
-                    translated.toLowerCase() !== message.content.toLowerCase()
-                ) {
-                    try {
-                        await message.channel.send({
-                            content: `Translation for <@${memberId}>: ${translated}`,
-                            reply: {
-                                messageReference: message.id,
-                                failIfNotExists: false,
-                            },
-                        });
-                    } catch (error) {
-                        console.error("Error sending translation:", error);
-                        await message.channel.send({
-                            content: `Translation for <@${memberId}>: ${translated}`,
-                        });
-                    }
+    const message = reaction.message;
+    if (!message.content) return;
+
+    try {
+        const userLang = languageManager.getUserPreference(user.id);
+        if (!userLang || userLang === 'en') return;
+
+        const translated = await languageManager.translateMessage(
+            message.content,
+            userLang
+        );
+
+        if (translated && translated.toLowerCase() !== message.content.toLowerCase()) {
+            const translationMsg = await message.channel.send({
+                content: `Translation for <@${user.id}>: ${translated}`,
+                reply: {
+                    messageReference: message.id,
+                    failIfNotExists: false,
                 }
-            } catch (error) {
-                console.error("Translation error:", error);
-            }
+            });
+
+            // Delete translation after 10 seconds
+            setTimeout(() => {
+                translationMsg.delete().catch(console.error);
+            }, 10000);
         }
+    } catch (error) {
+        console.error("Translation error:", error);
     }
 });
 
