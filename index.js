@@ -84,45 +84,32 @@ client.once("ready", () => {
 
 const languageManager = require("./utils/languageManager");
 
-client.on("messageCreate", async (message) => {
-    if (message.author.bot || message.content.trim() === "") return;
-
-    try {
-        if (message.author.id !== client.user.id) {
-            await message.react('🔤');
-        }
-    } catch (error) {
-        console.error("Error adding translation reaction:", error);
-    }
-});
-
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot || reaction.emoji.name !== '🔤') return;
 
     try {
         const userLang = languageManager.getUserPreference(user.id);
-        if (userLang === 'en') {
-            const channel = reaction.message.channel;
-            await channel.send({
+        if (!userLang || userLang === 'en') {
+            await reaction.message.channel.send({
                 content: `<@${user.id}> Please set your preferred language first using /setlanguage`,
                 ephemeral: true
             });
-            await reaction.users.remove(user);
             return;
         }
 
+        const messageContent = reaction.message.content;
+        if (!messageContent) return;
+
         const translated = await languageManager.translateMessage(
-            reaction.message.content,
+            messageContent,
             userLang
         );
 
-        if (translated && translated.toLowerCase() !== reaction.message.content.toLowerCase()) {
-            const channel = reaction.message.channel;
-            await channel.send({
+        if (translated && translated.toLowerCase() !== messageContent.toLowerCase()) {
+            await reaction.message.channel.send({
                 content: `<@${user.id}> Translation to ${userLang.toUpperCase()}: ${translated}`
             });
         }
-        await reaction.users.remove(user);
     } catch (error) {
         console.error("Translation error:", error);
     }
