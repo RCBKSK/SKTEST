@@ -1,3 +1,4 @@
+
 const { Collection } = require('discord.js');
 const dataManager = require('./dataManager');
 
@@ -11,6 +12,7 @@ class SkullManager {
         
         // Restore data on startup
         this.restoreData();
+    }
 
     async restoreData() {
         try {
@@ -20,8 +22,6 @@ class SkullManager {
         } catch (error) {
             console.error('❌ Failed to restore skull data:', error);
         }
-    }
-
     }
 
     loadData() {
