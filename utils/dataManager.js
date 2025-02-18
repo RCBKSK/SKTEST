@@ -9,7 +9,59 @@ class DataManager {
         if (!fs.existsSync(this.dataDir)) {
             fs.mkdirSync(this.dataDir);
         }
-        this.setupAutoPush(); // Auto backup every 5 minutes
+        this.setupLocalBackup(); // Local backup every 2 minutes
+        this.setupAutoPush(); // GitHub backup every 30 minutes
+    }
+
+    setupLocalBackup() {
+        setInterval(() => {
+            this.saveLocalBackup();
+        }, 2 * 60 * 1000); // Every 2 minutes
+    }
+
+    saveLocalBackup() {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupDir = path.join(this.dataDir, 'backups', timestamp);
+        
+        try {
+            if (!fs.existsSync(path.join(this.dataDir, 'backups'))) {
+                fs.mkdirSync(path.join(this.dataDir, 'backups'));
+            }
+            fs.mkdirSync(backupDir);
+            
+            // Copy current data files to backup
+            const files = ['skulls.json', 'lotteries.json'];
+            files.forEach(file => {
+                if (fs.existsSync(path.join(this.dataDir, file))) {
+                    fs.copyFileSync(
+                        path.join(this.dataDir, file),
+                        path.join(backupDir, file)
+                    );
+                }
+            });
+            console.log(`✅ Local backup created at ${backupDir}`);
+            
+            // Keep only last 10 backups
+            this.cleanOldBackups();
+        } catch (error) {
+            console.error('❌ Error creating local backup:', error);
+        }
+    }
+
+    cleanOldBackups() {
+        const backupsDir = path.join(this.dataDir, 'backups');
+        if (!fs.existsSync(backupsDir)) return;
+        
+        const backups = fs.readdirSync(backupsDir)
+            .map(name => path.join(backupsDir, name))
+            .filter(path => fs.statSync(path).isDirectory())
+            .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime());
+            
+        if (backups.length > 10) {
+            backups.slice(10).forEach(dir => {
+                fs.rmSync(dir, { recursive: true, force: true });
+            });
+        }
     }
 
     saveData(filename, data) {
