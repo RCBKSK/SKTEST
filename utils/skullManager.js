@@ -1,4 +1,3 @@
-
 const { Collection } = require('discord.js');
 const dataManager = require('./dataManager');
 
@@ -12,7 +11,6 @@ class SkullManager {
         
         // Restore data on startup
         this.restoreData();
-    }
 
     async restoreData() {
         try {
@@ -22,6 +20,8 @@ class SkullManager {
         } catch (error) {
             console.error('❌ Failed to restore skull data:', error);
         }
+    }
+
     }
 
     loadData() {
@@ -36,6 +36,7 @@ class SkullManager {
     saveData() {
         const data = Object.fromEntries(this.userBalances);
         dataManager.saveData('skulls.json', data);
+        dataManager.saveLocalBackup(); // Immediate backup
     }
 
     getBalance(userId) {
