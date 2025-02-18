@@ -85,61 +85,71 @@ client.once("ready", () => {
 const languageManager = require("./utils/languageManager");
 
 client.on("messageCreate", async (message) => {
-    // Don't react to bot messages or empty messages
     if (message.author.bot || message.content.trim() === "") return;
 
     try {
-        // Only add reaction if message is not from the bot itself
         if (message.author.id !== client.user.id) {
-            await message.react('🌐');
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('translate_es')
+                        .setLabel('🇪🇸 Spanish')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('translate_fr')
+                        .setLabel('🇫🇷 French')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('translate_de')
+                        .setLabel('🇩🇪 German')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('translate_ja')
+                        .setLabel('🇯🇵 Japanese')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            await message.reply({
+                content: '**Choose a language to translate to:**',
+                components: [row],
+            });
         }
     } catch (error) {
-        console.error("Error adding translation reaction:", error);
+        console.error("Error creating translation buttons:", error);
     }
 });
 
-client.on("messageReactionAdd", async (reaction, user) => {
-    // Ignore bot reactions and non-globe reactions
-    if (user.bot) return;
-    if (reaction.emoji.name !== '🌐') return;
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    
+    if (interaction.customId.startsWith('translate_')) {
+        const targetLang = interaction.customId.split('_')[1];
+        const message = await interaction.message.fetchReference();
+        
+        try {
+            const translated = await languageManager.translateMessage(
+                message.content,
+                targetLang
+            );
 
-    const message = reaction.message;
-    if (!message.content) return;
-
-    try {
-        const userLang = languageManager.getUserPreference(user.id);
-        // Only translate if user has a non-English language preference
-        if (!userLang) {
-            await message.channel.send({
-                content: `<@${user.id}>, please set your preferred language using /setlanguage first!`,
+            if (translated && translated.toLowerCase() !== message.content.toLowerCase()) {
+                await interaction.reply({
+                    content: `Translation to ${targetLang.toUpperCase()}: ${translated}`,
+                    ephemeral: true
+                });
+            } else {
+                await interaction.reply({
+                    content: 'No translation needed or translation failed.',
+                    ephemeral: true
+                });
+            }
+        } catch (error) {
+            console.error("Translation error:", error);
+            await interaction.reply({
+                content: 'Failed to translate the message.',
                 ephemeral: true
             });
-            return;
         }
-
-        if (userLang === 'en') return;
-
-        const translated = await languageManager.translateMessage(
-            message.content,
-            userLang
-        );
-
-        if (translated && translated.toLowerCase() !== message.content.toLowerCase()) {
-            const translationMsg = await message.channel.send({
-                content: `Translation for <@${user.id}>: ${translated}`,
-                reply: {
-                    messageReference: message.id,
-                    failIfNotExists: false,
-                }
-            });
-
-            // Delete translation after 10 seconds
-            setTimeout(() => {
-                translationMsg.delete().catch(console.error);
-            }, 10000);
-        }
-    } catch (error) {
-        console.error("Translation error:", error);
     }
 });
 
