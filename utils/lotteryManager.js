@@ -153,108 +153,108 @@ class LotteryManager {
         return this.lotteries.get(lotteryId);
     }
 
-    async getAllActiveLotteries() {
-        try {
-            // Get active lotteries
-            const { data: activeLotteries, error: activeError } = await supabase
-                .from('lotteries')
-                .select('*')
-                .eq('status', 'active');
+   async getAllActiveLotteries() {
+    try {
+        // Get active lotteries
+        const { data: activeLotteries, error: activeError } = await supabase
+            .from('lotteries')
+            .select('*')
+            .eq('status', 'active');
 
-            if (activeError) throw activeError;
+        if (activeError) throw activeError;
 
-            // Get lotteries that ended in the last 10 minutes but might need winner announcement
-            const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
-            const { data: recentEndedLotteries, error: endedError } = await supabase
-                .from('lotteries')
-                .select('*')
-                .eq('status', 'ended')
-                .gt('endTime', tenMinutesAgo);
+        // Get lotteries that ended in the last 10 minutes but might need winner announcement
+        const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+        const { data: recentEndedLotteries, error: endedError } = await supabase
+            .from('lotteries')
+            .select('*')
+            .eq('status', 'ended')
+            .gt('endTime', tenMinutesAgo);
 
-            if (endedError) throw endedError;
+        if (endedError) throw endedError;
 
-            const now = Date.now();
-            const processLottery = async (lottery, isActive) => {
-                lottery.participants = new Map(Object.entries(lottery.participants || {}));
-                lottery.winnerAnnounced = lottery.winnerAnnounced || false;
-                
-                if (now > lottery.endTime) {
-                    if (lottery.participants.size >= lottery.minParticipants) {
-                        if (isActive) {
-                            const winners = await this.drawWinners(lottery.id);
-                            await this.updateStatus(lottery.id, 'ended');
-                        }
-                        
-                        if (this.client && lottery.channelid && !lottery.winnerAnnounced) {
-                            try {
-                                const channel = await this.client.channels.fetch(lottery.channelid);
-                                if (channel) {
-                                    const winnerList = lottery.winnerList || [];
-                                    const winnerMentions = winnerList.map(w => 
-                                        typeof w === 'string' ? `<@${w}>` : `<@${w.id}>`
-                                    ).join(', ');
-                                    
-                                    await channel.send({
-                                        content: `🎉 Lottery ${lottery.id} for ${lottery.prize} has concluded!\n**Winners:** ${winnerMentions}`,
-                                        embeds: [messageTemplates.createWinnerEmbed(lottery, winnerList)]
-                                    });
-                                    
-                                    // Update winner announcement status
-                                    await supabase
-                                        .from('lotteries')
-                                        .update({ winnerAnnounced: true })
-                                        .eq('id', lottery.id);
-                                        
-                                    lottery.winnerAnnounced = true;
-                                }
-                            } catch (err) {
-                                console.error('Error sending winner message:', err);
-                            }
-                        }
-                    } else if (isActive) {
+        const now = Date.now();
+        const processLottery = async (lottery, isActive) => {
+            lottery.participants = new Map(Object.entries(lottery.participants || {}));
+            lottery.winnerAnnounced = lottery.winnerAnnounced || false;
+
+            if (now > lottery.endTime) {
+                if (lottery.participants.size >= lottery.minParticipants) {
+                    if (isActive) {
+                        const winners = await this.drawWinners(lottery.id);
                         await this.updateStatus(lottery.id, 'ended');
-                        if (this.client && lottery.channelid) {
-                            try {
-                                const channel = await this.client.channels.fetch(lottery.channelid);
-                                if (channel) {
-                                    await channel.send(`⚠️ Lottery ${lottery.id} for ${lottery.prize} has ended without winners due to insufficient participants (${lottery.participants.size}/${lottery.minParticipants} required).`);
-                                }
-                            } catch (err) {
-                                console.error('Error sending end message:', err);
+                    }
+
+                    if (this.client && lottery.channelid && !lottery.winnerAnnounced) {
+                        try {
+                            const channel = await this.client.channels.fetch(lottery.channelid);
+                            if (channel) {
+                                const winnerList = lottery.winnerList || [];
+                                const winnerMentions = winnerList.map(w => 
+                                    typeof w === 'string' ? `<@${w}>` : `<@${w.id}>`
+                                ).join(', ');
+
+                                await channel.send({
+                                    content: `🎉 Lottery ${lottery.id} for ${lottery.prize} has concluded!\n**Winners:** ${winnerMentions}`,
+                                    embeds: [messageTemplates.createWinnerEmbed(lottery, winnerList)]
+                                });
+
+                                // Update winner announcement status
+                                await supabase
+                                    .from('lotteries')
+                                    .update({ winnerAnnounced: true })
+                                    .eq('id', lottery.id);
+
+                                lottery.winnerAnnounced = true;
                             }
+                        } catch (err) {
+                            console.error('Error sending winner message:', err);
                         }
                     }
-                    return null;
-                }
-
-                if (isActive) {
-                    this.lotteries.set(lottery.id, lottery);
-                    if (!lottery.isManualDraw) {
-                        const remainingTime = lottery.endTime - now;
-                        this.setTimer(lottery.id, remainingTime);
+                } else if (isActive) {
+                    await this.updateStatus(lottery.id, 'ended');
+                    if (this.client && lottery.channelid) {
+                        try {
+                            const channel = await this.client.channels.fetch(lottery.channelid);
+                            if (channel) {
+                                await channel.send(`⚠️ Lottery ${lottery.id} for ${lottery.prize} has ended without winners due to insufficient participants (${lottery.participants.size}/${lottery.minParticipants} required).`);
+                            }
+                        } catch (err) {
+                            console.error('Error sending end message:', err);
+                        }
                     }
                 }
-                return isActive ? lottery : null;
-            };
+                return null;
+            }
 
-            const activePromises = activeLotteries.map(lottery => processLottery(lottery, true));
-            const endedPromises = recentEndedLotteries.map(lottery => processLottery(lottery, false));
+            if (isActive) {
+                this.lotteries.set(lottery.id, lottery);
+                if (!lottery.isManualDraw) {
+                    const remainingTime = lottery.endTime - now;
+                    this.setTimer(lottery.id, remainingTime);
+                }
+            }
+            return isActive ? lottery : null;
+        };
 
-            const results = await Promise.all([...activePromises, ...endedPromises]);
-            return results.filter(lottery => lottery !== null);
-        } catch (error) {
-            console.error('Error fetching lotteries:', error);
-            return [];
-        }
+        const activePromises = activeLotteries.map(lottery => processLottery(lottery, true));
+        const endedPromises = recentEndedLotteries.map(lottery => processLottery(lottery, false));
+
+        const results = await Promise.all([...activePromises, ...endedPromises]);
+        return results.filter(lottery => lottery !== null);
+    } catch (error) {
+        console.error('Error fetching lotteries:', error);
+        return [];
     }
+}
 
     setTimer(lotteryId, duration) {
-        if (this.timers.has(lotteryId)) {
-            clearTimeout(this.timers.get(lotteryId));
-        }
-        const timer = setTimeout(() => this.endLottery(lotteryId), duration);
-        this.timers.set(lotteryId, timer);
+    if (this.timers.has(lotteryId)) {
+        clearTimeout(this.timers.get(lotteryId));
     }
+    const timer = setTimeout(() => this.endLottery(lotteryId), duration);
+    this.timers.set(lotteryId, timer);
+}
 
     async endLottery(lotteryId) {
         const lottery = this.getLottery(lotteryId);
