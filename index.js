@@ -74,12 +74,24 @@ const rest = new REST({ version: "10" }).setToken(config.token);
 })();
 
 // Event handlers
-client.once("ready", () => {
+const lotteryManager = require('./utils/lotteryManager');
+lotteryManager.setClient(client);
+
+client.once("ready", async () => {
     console.log(`Logged in as ${client.user.tag}`);
     console.log(`Loaded ${client.commands.size} commands`);
     console.log("Admin Role ID:", config.adminRoleId);
     console.log("Moderator Role ID:", config.moderatorRoleId);
     console.log("Participant Role ID:", config.participantRoleId);
+    
+    // Initialize active lotteries
+    try {
+        const activeLotteries = await lotteryManager.getAllActiveLotteries();
+        console.log(`Restored ${activeLotteries.length} active lotteries`);
+    } catch (error) {
+        console.error('Error restoring lotteries:', error);
+    }
+    
     console.log("Bot is ready to process commands!");
 });
 

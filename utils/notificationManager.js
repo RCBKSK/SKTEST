@@ -31,9 +31,39 @@ class NotificationManager {
         }
     }
 
+    async cleanupStuckMessages(channelId, client) {
+        try {
+            const channel = await client.channels.fetch(channelId);
+            if (!channel) return;
+            
+            const messages = await channel.messages.fetch({ limit: 50 });
+            const stuckMessages = messages.filter(msg => 
+                msg.embeds.length > 0 && 
+                msg.embeds[0].title === '📊 Lottery Status' &&
+                msg.embeds[0].fields.some(f => 
+                    f.name === '⏰ Time Remaining' && 
+                    f.value.includes('-')
+                )
+            );
+
+            for (const msg of stuckMessages) {
+                try {
+                    await msg.delete();
+                } catch (err) {
+                    console.error('Error deleting stuck message:', err);
+                }
+            }
+        } catch (error) {
+            console.error('Error cleaning up stuck messages:', error);
+        }
+    }
+
     async scheduleEndingSoonNotification(lottery, client) {
         const notificationTime = lottery.endTime - (15 * 60 * 1000); // 15 minutes before end
         const now = Date.now();
+
+        // Clean up any stuck messages first
+        await this.cleanupStuckMessages(lottery.channelid, client);
 
         if (notificationTime > now) {
             this.pendingNotifications.set(lottery.id, setTimeout(async () => {
