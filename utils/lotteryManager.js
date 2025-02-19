@@ -40,31 +40,49 @@ class LotteryManager {
         try {
             await options.interaction?.deferReply({ ephemeral: true });
             const lotteryId = Date.now().toString();
+            const currentTime = Date.now();
             const lottery = {
                 id: lotteryId,
                 prize: options.prize || 'No prize specified',
                 winners: options.winners || 1,
                 minParticipants: options.minParticipants || 1,
                 terms: options.terms || "Winner must have an active C61 account, or a redraw occurs!",
-                startTime: Date.now(),
-                endTime: Date.now() + options.duration,
+                startTime: currentTime,
+                endTime: currentTime + options.duration,
                 participants: new Map(),
                 maxTicketsPerUser: options.maxTicketsPerUser || 100,
                 ticketPrice: options.ticketPrice ?? 0,
                 messageId: null,
-                channelid: options.channelId,
                 guildId: options.guildId,
                 isManualDraw: options.isManualDraw ?? false,
                 status: 'pending',
                 createdBy: options.createdBy,
-                totalTickets: 0
+                totalTickets: 0,
+                winnerList: [],
+                channelid: options.channelId
             };
 
             const { data, error } = await supabase
                 .from('lotteries')
                 .insert([{
-                    ...lottery,
-                    participants: Object.fromEntries(lottery.participants)
+                    id: lottery.id,
+                    prize: lottery.prize,
+                    winners: lottery.winners,
+                    minParticipants: lottery.minParticipants,
+                    terms: lottery.terms,
+                    startTime: currentTime,
+                    endTime: currentTime + options.duration,
+                    participants: Object.fromEntries(lottery.participants),
+                    maxTicketsPerUser: lottery.maxTicketsPerUser,
+                    ticketPrice: lottery.ticketPrice,
+                    messageId: lottery.messageId,
+                    guildId: lottery.guildId,
+                    isManualDraw: lottery.isManualDraw,
+                    status: lottery.status,
+                    createdBy: lottery.createdBy,
+                    totalTickets: lottery.totalTickets,
+                    winnerList: lottery.winnerList || [],
+                    channelid: lottery.channelid
                 }])
                 .select()
                 .single();
@@ -84,18 +102,37 @@ class LotteryManager {
 
 
     async updateLotteryStatus(lotteryId, status) {
-        const { error } = await supabase
-            .from('lotteries')
-            .update({ status })
-            .eq('id', lotteryId);
-        
-        if (!error) {
-            const lottery = this.getLottery(lotteryId);
-            if (lottery) {
-                lottery.status = status;
+        const lottery = this.getLottery(lotteryId);
+        if (!lottery) return false;
+
+        const currentTime = Date.now();
+        const updates = {
+            status: status,
+            endTime: status === 'ended' ? currentTime : lottery.endTime,
+            winners: lottery.winners || [],
+            winnerList: Array.isArray(lottery.winnerList) ? lottery.winnerList : [],
+            totalTickets: lottery.totalTickets
+        };
+
+        try {
+            const { error } = await supabase
+                .from('lotteries')
+                .update(updates)
+                .eq('id', lotteryId);
+
+            if (error) throw error;
+
+            lottery.status = status;
+            if (status === 'ended') {
+                lottery.endTime = currentTime;
             }
+            this.lotteries.set(lotteryId, lottery);
+            console.log(`Successfully updated lottery ${lotteryId} status to ${status}`);
+            return true;
+        } catch (error) {
+            console.error('Error updating lottery status:', error);
+            return false;
         }
-        return !error;
     }
 
 
@@ -155,9 +192,24 @@ class LotteryManager {
         return this.lotteries.get(lotteryId);
     }
 
-    getAllActiveLotteries() {
-        return Array.from(this.lotteries.values())
-            .filter(lottery => lottery.status === 'active');
+    async getAllActiveLotteries() {
+        const { data, error } = await supabase
+            .from('lotteries')
+            .select('*')
+            .eq('status', 'active');
+
+        if (error) {
+            console.error('Error fetching active lotteries:', error);
+            return [];
+        }
+
+        // Update local cache
+        data.forEach(lottery => {
+            lottery.participants = new Map(Object.entries(lottery.participants || {}));
+            this.lotteries.set(lottery.id, lottery);
+        });
+
+        return data;
     }
 
     async drawWinners(lotteryId) {
@@ -166,17 +218,17 @@ class LotteryManager {
 
         const totalParticipants = lottery.participants.size;
         if (totalParticipants < lottery.minParticipants) {
-            lottery.status = 'ended';
-            await this.updateLotteryStatus(lotteryId, 'ended');
-            return null;
+            return [];
         }
 
         const winners = new Set();
         const numWinners = Math.min(lottery.winners, lottery.participants.size);
-        const ticketArray = [];
+        const participantArray = Array.from(lottery.participants.keys());
 
-        for (const [userId, ticketCount] of lottery.participants) {
-            for (let i = 0; i < ticketCount; i++) {
+        // Weighted random selection based on tickets
+        const ticketArray = [];
+        for (const [userId, tickets] of lottery.participants) {
+            for (let i = 0; i < tickets; i++) {
                 ticketArray.push(userId);
             }
         }
@@ -185,7 +237,12 @@ class LotteryManager {
             const randomIndex = Math.floor(Math.random() * ticketArray.length);
             const winner = ticketArray[randomIndex];
             winners.add(winner);
-            ticketArray.splice(0, ticketArray.length, ...ticketArray.filter(id => id !== winner));
+            // Remove all tickets for this winner
+            for (let i = ticketArray.length - 1; i >= 0; i--) {
+                if (ticketArray[i] === winner) {
+                    ticketArray.splice(i, 1);
+                }
+            }
         }
 
         lottery.status = 'ended';
@@ -195,15 +252,29 @@ class LotteryManager {
             .from('lotteries')
             .update({
                 status: 'ended',
-                winners: winnerArray
+                winners: winnerArray.length,
+                winnerList: winnerArray.map(id => parseInt(id, 10)),
+                endTime: Date.now(),
+                participants: Object.fromEntries(lottery.participants),
+                totalTickets: lottery.totalTickets
             })
             .eq('id', lotteryId);
 
-        if (!error) {
-            analyticsManager.recordWinners(lotteryId, winnerArray);
+        if (error) {
+            console.error('Error updating lottery winners:', error);
             return winnerArray;
         }
-        return null;
+
+        // Update local lottery object
+        this.lotteries.set(lotteryId, {
+            ...lottery,
+            status: 'ended',
+            winners: winnerArray,
+            winnerList: winnerArray
+        });
+
+        analyticsManager.recordWinners(lotteryId, winnerArray);
+        return winnerArray;
     }
 
     async cancelLottery(lotteryId) {

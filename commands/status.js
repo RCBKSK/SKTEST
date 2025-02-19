@@ -15,7 +15,7 @@ module.exports = {
             return;
         }
 
-        const activeLotteries = lotteryManager.getAllActiveLotteries();
+        const activeLotteries = await lotteryManager.getAllActiveLotteries();
         
         if (activeLotteries.length === 0) {
             await interaction.reply({ content: 'There are no active lotteries.', ephemeral: true });

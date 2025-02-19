@@ -154,7 +154,7 @@ module.exports = {
                 console.error('Error replying with lottery settings:', error);
             }
 
-            lottery.channelId = interaction.channelId;
+            lottery.channelid = interaction.channelId;
             lottery.guildId = interaction.guildId;
 
         } catch (error) {

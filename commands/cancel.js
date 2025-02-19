@@ -36,9 +36,15 @@ module.exports = {
             await interaction.reply({ content: `Lottery for ${lottery.prize} has been cancelled.`, ephemeral: true });
 
             // Send a message to the channel where lottery was created
-            const channel = await interaction.client.channels.fetch(lottery.channelId);
-            if (channel) {
-                await channel.send(`🚫 The lottery for ${lottery.prize} has been cancelled by an administrator.`);
+            if (lottery.channelid) {  // Note: using channelid instead of channelId
+                try {
+                    const channel = await interaction.client.channels.fetch(lottery.channelid);
+                    if (channel) {
+                        await channel.send(`🚫 The lottery for ${lottery.prize} has been cancelled by an administrator.`);
+                    }
+                } catch (error) {
+                    console.error('Failed to send cancellation message:', error);
+                }
             }
         } else {
             await interaction.reply({ content: 'Failed to cancel the lottery.', ephemeral: true });

@@ -48,7 +48,7 @@ module.exports = {
             return;
         }
 
-        const winners = lotteryManager.drawWinners(lotteryId);
+        const winners = await lotteryManager.drawWinners(lotteryId);
         if (!winners) {
             await interaction.reply({ content: 'Failed to draw winners.', ephemeral: true });
             return;
@@ -67,7 +67,7 @@ module.exports = {
             }
         }
 
-        const channel = await interaction.client.channels.fetch(lottery.channelId);
+        const channel = await interaction.client.channels.fetch(lottery.channelid);
         if (channel) {
             await channel.send({
                 embeds: [

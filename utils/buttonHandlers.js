@@ -38,7 +38,7 @@ async function handleButton(interaction) {
             content: 'There was an error processing your request. Please try again.',
             ephemeral: true
         };
-        
+
         try {
             if (interaction.replied) {
                 await interaction.followUp(response);
@@ -188,26 +188,30 @@ async function handleConfirmLottery(interaction, lotteryId) {
 
                 if (!channel) {
                     await lotteryManager.cancelLottery(lotteryId);
+                    await lotteryManager.updateLotteryStatus(lotteryId, 'ended'); //Update supabase even if channel is not found
                     return;
                 }
 
                 if (lottery.participants.size < lottery.minParticipants) {
                     await updateLotteryMessage(channel, lottery.messageId, lottery, false);
-                    await channel.send(`Lottery for ${lottery.prize} has ended with insufficient participants. Minimum required: ${lottery.minParticipants}`);
+                    await channel.send(`Lottery for ${lottery.prize} has ended without winners. Reason: Insufficient participants (${lottery.participants.size}/${lottery.minParticipants} required)`);
                     await lotteryManager.cancelLottery(lotteryId);
+                    await lotteryManager.updateLotteryStatus(lotteryId, 'ended'); //Update supabase even if insufficient participants
                     return;
                 }
 
                 const winners = await lotteryManager.drawWinners(lotteryId);
-                if (winners === null) {
+                if (!winners || winners.length === 0) {
                     if (channel) {
                         await updateLotteryMessage(channel, lottery.messageId, lottery, false);
-                        await channel.send(`Lottery for ${lottery.prize} has ended with no winners drawn.`);
+                        await channel.send(`Lottery for ${lottery.prize} has ended. No winners were selected due to insufficient participants.`);
+                        // Ensure lottery is marked as ended even with no winners
+                        await lotteryManager.updateLotteryStatus(lotteryId, 'ended');
                     }
                     clearInterval(updateInterval);
                     return;
                 }
-                
+
                 if (channel && Array.isArray(winners)) {
                     const userMentions = new Map();
                     for (const winnerId of winners) {
@@ -230,6 +234,8 @@ async function handleConfirmLottery(interaction, lotteryId) {
                             messageTemplates.createCongratulationsEmbed(lottery.prize, winners, userMentions)
                         ]
                     });
+                    await lotteryManager.updateLotteryStatus(lotteryId, 'ended'); // Update after sending winner messages
+
                 }
             }
         }, lottery.endTime - Date.now());
