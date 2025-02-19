@@ -96,7 +96,8 @@ module.exports = {
                 return;
             }
 
-            const lottery = lotteryManager.createLottery({
+            const lottery = await lotteryManager.createLottery({
+                interaction,
                 prize: interaction.options.getString('prize'),
                 winners,
                 minParticipants,
@@ -159,11 +160,15 @@ module.exports = {
         } catch (error) {
             console.error('Error in lottery command:', error);
             try {
-                if (!interaction.deferred && !interaction.replied) {
-                    await interaction.reply({
-                        content: 'An error occurred while creating the lottery. Please try again.',
-                        ephemeral: true
-                    });
+                const response = {
+                    content: 'An error occurred while creating the lottery. Please try again.',
+                    ephemeral: true
+                };
+                
+                if (interaction.deferred) {
+                    await interaction.editReply(response);
+                } else if (!interaction.replied) {
+                    await interaction.reply(response);
                 }
             } catch (error) {
                 console.error('Failed to send error message:', error);

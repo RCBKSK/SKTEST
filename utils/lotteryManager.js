@@ -1,4 +1,3 @@
-
 const analyticsManager = require('./analyticsManager');
 const supabase = require('./supabaseClient');
 
@@ -13,7 +12,7 @@ class LotteryManager {
             .from('lotteries')
             .select('*')
             .eq('status', 'active');
-        
+
         if (!error && data) {
             data.forEach(lottery => {
                 lottery.participants = new Map(Object.entries(lottery.participants || {}));
@@ -22,45 +21,83 @@ class LotteryManager {
         }
     }
 
-    async createLottery(options) {
-        const lotteryId = Date.now().toString();
-        const lottery = {
-            id: lotteryId,
-            prize: options.prize || 'No prize specified',
-            winners: options.winners || 1,
-            minParticipants: options.minParticipants || 1,
-            terms: options.terms || "Winner must have an active C61 account, or a redraw occurs!",
-            startTime: Date.now(),
-            endTime: Date.now() + options.duration,
-            participants: new Map(),
-            maxTicketsPerUser: options.maxTicketsPerUser || 100,
-            ticketPrice: options.ticketPrice ?? 0,
-            messageId: null,
-            channelId: null,
-            guildId: null,
-            isManualDraw: options.isManualDraw ?? false,
-            status: 'pending',
-            createdBy: options.createdBy,
-            totalTickets: 0
-        };
+    async testDatabaseConnection() {
+        try {
+            const { data, error } = await supabase
+                .from('lotteries')
+                .select('*')
+                .limit(1);
 
-        const { data, error } = await supabase
-            .from('lotteries')
-            .insert([{
-                ...lottery,
-                participants: Object.fromEntries(lottery.participants)
-            }])
-            .select()
-            .single();
-
-        if (!error && data) {
-            this.lotteries.set(lotteryId, lottery);
-            return lottery;
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Database connection error:', error);
+            return false;
         }
-
-        console.error('Failed to create lottery:', error);
-        return null;
     }
+
+    async createLottery(options) {
+        try {
+            await options.interaction?.deferReply({ ephemeral: true });
+            const lotteryId = Date.now().toString();
+            const lottery = {
+                id: lotteryId,
+                prize: options.prize || 'No prize specified',
+                winners: options.winners || 1,
+                minParticipants: options.minParticipants || 1,
+                terms: options.terms || "Winner must have an active C61 account, or a redraw occurs!",
+                startTime: Date.now(),
+                endTime: Date.now() + options.duration,
+                participants: new Map(),
+                maxTicketsPerUser: options.maxTicketsPerUser || 100,
+                ticketPrice: options.ticketPrice ?? 0,
+                messageId: null,
+                channelid: options.channelId,
+                guildId: options.guildId,
+                isManualDraw: options.isManualDraw ?? false,
+                status: 'pending',
+                createdBy: options.createdBy,
+                totalTickets: 0
+            };
+
+            const { data, error } = await supabase
+                .from('lotteries')
+                .insert([{
+                    ...lottery,
+                    participants: Object.fromEntries(lottery.participants)
+                }])
+                .select()
+                .single();
+
+            if (!error && data) {
+                this.lotteries.set(lotteryId, lottery);
+                return lottery;
+            }
+
+            console.error('Failed to create lottery:', error);
+            throw error;
+        } catch (error) {
+            console.error('Error in createLottery:', error);
+            throw error;
+        }
+    }
+
+
+    async updateLotteryStatus(lotteryId, status) {
+        const { error } = await supabase
+            .from('lotteries')
+            .update({ status })
+            .eq('id', lotteryId);
+        
+        if (!error) {
+            const lottery = this.getLottery(lotteryId);
+            if (lottery) {
+                lottery.status = status;
+            }
+        }
+        return !error;
+    }
+
 
     async addParticipant(lotteryId, userId, tickets = 1) {
         const lottery = this.getLottery(lotteryId);
@@ -127,8 +164,12 @@ class LotteryManager {
         const lottery = this.getLottery(lotteryId);
         if (!lottery || lottery.status !== 'active') return null;
 
-        const totalTickets = lottery.totalTickets;
-        if (totalTickets < lottery.minParticipants) return null;
+        const totalParticipants = lottery.participants.size;
+        if (totalParticipants < lottery.minParticipants) {
+            lottery.status = 'ended';
+            await this.updateLotteryStatus(lotteryId, 'ended');
+            return null;
+        }
 
         const winners = new Set();
         const numWinners = Math.min(lottery.winners, lottery.participants.size);
@@ -193,12 +234,12 @@ class LotteryManager {
                 .from('lotteries')
                 .select('*')
                 .limit(1);
-            
+
             if (error) {
                 console.error('Supabase connection test failed:', error.message);
                 return false;
             }
-            
+
             console.log('Supabase connection successful. Sample data:', data);
             return true;
         } catch (error) {
@@ -206,7 +247,6 @@ class LotteryManager {
             return false;
         }
     }
-
 
     getParticipantTickets(lotteryId, userId) {
         const lottery = this.getLottery(lotteryId);

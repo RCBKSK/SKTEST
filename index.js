@@ -174,20 +174,21 @@ client.on("interactionCreate", async (interaction) => {
         } catch (error) {
             console.error(`Error executing ${interaction.commandName}:`);
             console.error(error);
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction
-                    .reply({
-                        content: "There was an error executing this command!",
-                        ephemeral: true,
-                    })
-                    .catch(console.error);
-            } else {
-                await interaction
-                    .followUp({
-                        content: "There was an error executing this command!",
-                        ephemeral: true,
-                    })
-                    .catch(console.error);
+            try {
+                const response = {
+                    content: "There was an error executing this command!",
+                    ephemeral: true
+                };
+                
+                if (interaction.replied) {
+                    await interaction.followUp(response);
+                } else if (interaction.deferred) {
+                    await interaction.editReply(response);
+                } else {
+                    await interaction.reply(response);
+                }
+            } catch (err) {
+                console.error('Failed to send error response:', err);
             }
         }
     }

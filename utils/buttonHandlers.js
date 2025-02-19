@@ -3,6 +3,7 @@ const lotteryManager = require('./lotteryManager');
 const messageTemplates = require('./messageTemplates');
 const notificationManager = require('./notificationManager');
 const skullManager = require('./skullManager');
+const supabase = require('./supabaseClient');
 
 async function handleButton(interaction) {
     const [action, lotteryId, quantity] = interaction.customId.split('_');
@@ -33,10 +34,22 @@ async function handleButton(interaction) {
         }
     } catch (error) {
         console.error('Button interaction error:', error);
-        await interaction.reply({ 
+        const response = {
             content: 'There was an error processing your request. Please try again.',
-            ephemeral: true 
-        }).catch(console.error);
+            ephemeral: true
+        };
+        
+        try {
+            if (interaction.replied) {
+                await interaction.followUp(response);
+            } else if (interaction.deferred) {
+                await interaction.editReply(response);
+            } else {
+                await interaction.reply(response);
+            }
+        } catch (err) {
+            console.error('Failed to send error response:', err);
+        }
     }
 }
 
@@ -169,22 +182,33 @@ async function handleConfirmLottery(interaction, lotteryId) {
 
     if (!lottery.isManualDraw) {
         setTimeout(async () => {
-            clearInterval(updateInterval);
-
             if (lottery.status === 'active') {
                 const channel = await interaction.client.channels.fetch(lottery.channelId);
+                clearInterval(updateInterval);
 
-                if (lottery.minParticipants && lottery.participants.size < lottery.minParticipants) {
-                    if (channel) {
-                        await updateLotteryMessage(channel, lottery.messageId, lottery, false);
-                        await channel.send(`Lottery for ${lottery.prize} has ended with insufficient participants. Minimum required: ${lottery.minParticipants}`);
-                        lotteryManager.cancelLottery(lotteryId);
-                    }
+                if (!channel) {
+                    await lotteryManager.cancelLottery(lotteryId);
                     return;
                 }
 
-                const winners = lotteryManager.drawWinners(lotteryId);
-                if (channel && winners) {
+                if (lottery.participants.size < lottery.minParticipants) {
+                    await updateLotteryMessage(channel, lottery.messageId, lottery, false);
+                    await channel.send(`Lottery for ${lottery.prize} has ended with insufficient participants. Minimum required: ${lottery.minParticipants}`);
+                    await lotteryManager.cancelLottery(lotteryId);
+                    return;
+                }
+
+                const winners = await lotteryManager.drawWinners(lotteryId);
+                if (winners === null) {
+                    if (channel) {
+                        await updateLotteryMessage(channel, lottery.messageId, lottery, false);
+                        await channel.send(`Lottery for ${lottery.prize} has ended with no winners drawn.`);
+                    }
+                    clearInterval(updateInterval);
+                    return;
+                }
+                
+                if (channel && Array.isArray(winners)) {
                     const userMentions = new Map();
                     for (const winnerId of winners) {
                         try {
