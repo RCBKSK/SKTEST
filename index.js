@@ -88,10 +88,15 @@ client.once("ready", async () => {
     try {
         const activeLotteries = await lotteryManager.getAllActiveLotteries();
         console.log(`Restored ${activeLotteries.length} active lotteries`);
+
+        // Clean up stuck messages for each active lottery
+        for (const lottery of activeLotteries) {
+            await notificationManager.cleanupStuckMessages(lottery.channelid, client);
+        }
     } catch (error) {
         console.error('Error restoring lotteries:', error);
     }
-    
+
     console.log("Bot is ready to process commands!");
 });
 
