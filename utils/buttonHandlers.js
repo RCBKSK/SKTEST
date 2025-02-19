@@ -86,6 +86,22 @@ async function handleConfirmLottery(interaction, lotteryId) {
         return;
     }
 
+    const { error } = await supabase
+        .from('lotteries')
+        .update({ 
+            status: 'active',
+            isManualDraw: lottery.isManualDraw 
+        })
+        .eq('id', lottery.id);
+
+    if (error) {
+        await interaction.reply({ 
+            content: 'Failed to update lottery status. Please try again.',
+            ephemeral: true 
+        });
+        return;
+    }
+
     lottery.status = 'active';
     const embed = messageTemplates.createLotteryEmbed(lottery);
 

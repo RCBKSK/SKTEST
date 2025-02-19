@@ -1,35 +1,117 @@
+
 const analyticsManager = require('./analyticsManager');
+const supabase = require('./supabaseClient');
 
 class LotteryManager {
     constructor() {
         this.lotteries = new Map();
+        this.initializeLotteries();
     }
 
-    createLottery(options) {
+    async initializeLotteries() {
+        const { data, error } = await supabase
+            .from('lotteries')
+            .select('*')
+            .eq('status', 'active');
+        
+        if (!error && data) {
+            data.forEach(lottery => {
+                lottery.participants = new Map(Object.entries(lottery.participants || {}));
+                this.lotteries.set(lottery.id, lottery);
+            });
+        }
+    }
+
+    async createLottery(options) {
         const lotteryId = Date.now().toString();
         const lottery = {
             id: lotteryId,
-            prize: options.prize,
-            winners: options.winners,
+            prize: options.prize || 'No prize specified',
+            winners: options.winners || 1,
             minParticipants: options.minParticipants || 1,
             terms: options.terms || "Winner must have an active C61 account, or a redraw occurs!",
             startTime: Date.now(),
             endTime: Date.now() + options.duration,
-            participants: new Map(), // Changed to Map to store ticket counts
+            participants: new Map(),
             maxTicketsPerUser: options.maxTicketsPerUser || 100,
             ticketPrice: options.ticketPrice ?? 0,
             messageId: null,
             channelId: null,
             guildId: null,
-            isManualDraw: options.isManualDraw,
+            isManualDraw: options.isManualDraw ?? false,
             status: 'pending',
             createdBy: options.createdBy,
             totalTickets: 0
         };
 
-        this.lotteries.set(lotteryId, lottery);
-        console.log('Current lotteries:', this.lotteries); // Log the lotteries to check if it's populated
-        return lottery;
+        const { data, error } = await supabase
+            .from('lotteries')
+            .insert([{
+                ...lottery,
+                participants: Object.fromEntries(lottery.participants)
+            }])
+            .select()
+            .single();
+
+        if (!error && data) {
+            this.lotteries.set(lotteryId, lottery);
+            return lottery;
+        }
+
+        console.error('Failed to create lottery:', error);
+        return null;
+    }
+
+    async addParticipant(lotteryId, userId, tickets = 1) {
+        const lottery = this.getLottery(lotteryId);
+        if (!lottery || lottery.status !== 'active') return false;
+
+        const currentTickets = lottery.participants.get(userId) || 0;
+        if (currentTickets + tickets > lottery.maxTicketsPerUser) {
+            return false;
+        }
+
+        lottery.participants.set(userId, currentTickets + tickets);
+        lottery.totalTickets += tickets;
+
+        const { error } = await supabase
+            .from('lotteries')
+            .update({
+                participants: Object.fromEntries(lottery.participants),
+                totalTickets: lottery.totalTickets
+            })
+            .eq('id', lotteryId);
+
+        if (!error) {
+            analyticsManager.trackParticipation(lotteryId, userId, 'join', tickets);
+            return true;
+        }
+        return false;
+    }
+
+    async removeParticipant(lotteryId, userId) {
+        const lottery = this.getLottery(lotteryId);
+        if (!lottery || lottery.status !== 'active') return false;
+
+        const tickets = lottery.participants.get(userId);
+        if (!tickets) return false;
+
+        lottery.totalTickets -= tickets;
+        lottery.participants.delete(userId);
+
+        const { error } = await supabase
+            .from('lotteries')
+            .update({
+                participants: Object.fromEntries(lottery.participants),
+                totalTickets: lottery.totalTickets
+            })
+            .eq('id', lotteryId);
+
+        if (!error) {
+            analyticsManager.trackParticipation(lotteryId, userId, 'leave', tickets);
+            return true;
+        }
+        return false;
     }
 
     getLottery(lotteryId) {
@@ -41,35 +123,7 @@ class LotteryManager {
             .filter(lottery => lottery.status === 'active');
     }
 
-    addParticipant(lotteryId, userId, tickets = 1) {
-        const lottery = this.getLottery(lotteryId);
-        if (!lottery || lottery.status !== 'active') return false;
-
-        const currentTickets = lottery.participants.get(userId) || 0;
-        if (currentTickets + tickets > lottery.maxTicketsPerUser) {
-            return false;
-        }
-
-        lottery.participants.set(userId, currentTickets + tickets);
-        lottery.totalTickets += tickets;
-        analyticsManager.trackParticipation(lotteryId, userId, 'join', tickets);
-        return true;
-    }
-
-    removeParticipant(lotteryId, userId) {
-        const lottery = this.getLottery(lotteryId);
-        if (!lottery || lottery.status !== 'active') return false;
-
-        const tickets = lottery.participants.get(userId);
-        if (!tickets) return false;
-
-        lottery.totalTickets -= tickets;
-        lottery.participants.delete(userId);
-        analyticsManager.trackParticipation(lotteryId, userId, 'leave', tickets);
-        return true;
-    }
-
-    drawWinners(lotteryId) {
+    async drawWinners(lotteryId) {
         const lottery = this.getLottery(lotteryId);
         if (!lottery || lottery.status !== 'active') return null;
 
@@ -80,43 +134,79 @@ class LotteryManager {
         const numWinners = Math.min(lottery.winners, lottery.participants.size);
         const ticketArray = [];
 
-        // Create weighted ticket array
         for (const [userId, ticketCount] of lottery.participants) {
             for (let i = 0; i < ticketCount; i++) {
                 ticketArray.push(userId);
             }
         }
 
-        // Draw winners with weighted probability
         while (winners.size < numWinners && ticketArray.length > 0) {
             const randomIndex = Math.floor(Math.random() * ticketArray.length);
             const winner = ticketArray[randomIndex];
             winners.add(winner);
-            // Remove all tickets of the winner to prevent duplicate wins
             ticketArray.splice(0, ticketArray.length, ...ticketArray.filter(id => id !== winner));
         }
 
         lottery.status = 'ended';
         const winnerArray = Array.from(winners);
-        analyticsManager.recordWinners(lotteryId, winnerArray);
-        return winnerArray;
+
+        const { error } = await supabase
+            .from('lotteries')
+            .update({
+                status: 'ended',
+                winners: winnerArray
+            })
+            .eq('id', lotteryId);
+
+        if (!error) {
+            analyticsManager.recordWinners(lotteryId, winnerArray);
+            return winnerArray;
+        }
+        return null;
     }
 
-    cancelLottery(lotteryId) {
+    async cancelLottery(lotteryId) {
         const lottery = this.getLottery(lotteryId);
         if (!lottery) return false;
 
-        lottery.status = 'cancelled';
-        return true;
+        const { error } = await supabase
+            .from('lotteries')
+            .update({ status: 'cancelled' })
+            .eq('id', lotteryId);
+
+        if (!error) {
+            lottery.status = 'cancelled';
+            return true;
+        }
+        return false;
     }
 
     getTimeRemaining(lotteryId) {
         const lottery = this.getLottery(lotteryId);
         if (!lottery) return null;
-
-        const remaining = lottery.endTime - Date.now();
-        return Math.max(0, remaining);
+        return Math.max(0, lottery.endTime - Date.now());
     }
+
+    async testConnection() {
+        try {
+            const { data, error } = await supabase
+                .from('lotteries')
+                .select('*')
+                .limit(1);
+            
+            if (error) {
+                console.error('Supabase connection test failed:', error.message);
+                return false;
+            }
+            
+            console.log('Supabase connection successful. Sample data:', data);
+            return true;
+        } catch (error) {
+            console.error('Supabase connection test error:', error);
+            return false;
+        }
+    }
+
 
     getParticipantTickets(lotteryId, userId) {
         const lottery = this.getLottery(lotteryId);
@@ -127,7 +217,6 @@ class LotteryManager {
     getWinningProbability(lotteryId, userId) {
         const lottery = this.getLottery(lotteryId);
         if (!lottery || lottery.totalTickets === 0) return 0;
-
         const userTickets = lottery.participants.get(userId) || 0;
         return (userTickets / lottery.totalTickets) * 100;
     }
