@@ -1,59 +1,8 @@
 const analyticsManager = require('./analyticsManager');
-const dataManager = require('./dataManager');
 
 class LotteryManager {
     constructor() {
         this.lotteries = new Map();
-        this.loadData();
-
-        // Save data every 2 minutes
-        setInterval(() => this.saveData(), 2 * 60 * 1000);
-
-        // Pull data from GitHub on startup to restore state
-        this.restoreData();
-    }
-
-    async restoreData() {
-        try {
-            await dataManager.pullFromGitHub();
-            this.loadData();
-            console.log('✅ Lottery data restored from GitHub');
-        } catch (error) {
-            console.error('❌ Failed to restore lottery data:', error);
-        }
-    }
-
-    loadData() {
-        const data = dataManager.loadData('lotteries.json');
-        console.log('Loaded data:', data);
-        if (data) {
-            Object.entries(data).forEach(([id, lottery]) => {
-                // Only restore active lotteries
-                if (lottery.status === 'active' || lottery.status === 'pending') {
-                    lottery.participants = new Map(Object.entries(lottery.participants));
-                    this.lotteries.set(id, lottery);
-                }
-            });
-        }
-    }
-
-    saveData() {
-        const data = {};
-        for (const [id, lottery] of this.lotteries) {
-            // Convert Map to Object for JSON serialization
-            const serializedLottery = { ...lottery };
-            serializedLottery.participants = Object.fromEntries(lottery.participants);
-            data[id] = serializedLottery;
-        }
-
-        console.log('Data to be saved:', data);
-
-        if (Object.keys(data).length > 0) {
-            dataManager.saveData('lotteries.json', data);
-            dataManager.saveLocalBackup(); // Immediate backup
-        } else {
-            console.log('No lotteries to save.');
-        }
     }
 
     createLottery(options) {
