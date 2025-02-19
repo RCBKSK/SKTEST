@@ -1,15 +1,12 @@
-const dataManager = require("./dataManager");
 const { translate } = require("@vitalets/google-translate-api");
 
 class LanguageManager {
     constructor() {
-        this.preferences =
-            dataManager.loadData("language_preferences.json") || {};
+        this.preferences = {};
     }
 
     setUserPreference(userId, language) {
         this.preferences[userId] = language;
-        dataManager.saveData("language_preferences.json", this.preferences);
     }
 
     getUserPreference(userId) {
