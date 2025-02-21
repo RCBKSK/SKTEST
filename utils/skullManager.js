@@ -5,49 +5,64 @@ class SkullManager {
     constructor() {}
 
     async getBalance(userId) {
-        const { data, error } = await supabase
-            .from('skulls')
-            .select('balance')
-            .eq('user_id', userId);
-            
-        if (error) throw error;
-        return data?.[0]?.balance || 0;
+        try {
+            const { data, error } = await supabase
+                .from('skulls')
+                .select('balance')
+                .eq('user_id', userId)
+                .single();
+                
+            if (error) throw error;
+            return data?.balance || 0;
+        } catch (error) {
+            console.error('Error getting balance:', error);
+            return 0;
+        }
     }
 
     async addSkulls(userId, amount) {
-        const { data, error } = await supabase
-            .from('skulls')
-            .upsert({ 
-                user_id: userId, 
-                balance: amount 
-            }, { 
-                onConflict: 'user_id',
-                target: ['user_id'],
-                update: {
-                    balance: `skulls.balance + ${amount}`
-                }
-            })
-            .select()
-            .single();
-            
-        if (error) throw error;
-        return data.balance;
+        try {
+            const { data, error } = await supabase
+                .from('skulls')
+                .upsert({ 
+                    user_id: userId, 
+                    balance: amount 
+                }, { 
+                    onConflict: 'user_id',
+                    target: ['user_id'],
+                    update: {
+                        balance: supabase.raw(`skulls.balance + ${amount}`)
+                    }
+                })
+                .select()
+                .single();
+                
+            if (error) throw error;
+            return data.balance;
+        } catch (error) {
+            console.error('Error adding skulls:', error);
+            throw error;
+        }
     }
 
     async removeSkulls(userId, amount) {
-        const currentBalance = await this.getBalance(userId);
-        if (currentBalance < amount) {
+        try {
+            const currentBalance = await this.getBalance(userId);
+            if (currentBalance < amount) {
+                return false;
+            }
+            
+            const { error } = await supabase
+                .from('skulls')
+                .update({ balance: currentBalance - amount })
+                .eq('user_id', userId);
+                
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Error removing skulls:', error);
             return false;
         }
-        
-        const newBalance = currentBalance - amount;
-        const { error } = await supabase
-            .from('skulls')
-            .update({ balance: newBalance })
-            .eq('user_id', userId);
-            
-        if (error) throw error;
-        return true;
     }
 
     async hasEnoughSkulls(userId, amount) {
@@ -56,33 +71,43 @@ class SkullManager {
     }
 
     async transferSkulls(fromUserId, toUserId, amount) {
-        const client = await this.pool.connect();
+        const client = await supabase;
         try {
-            await client.query('BEGIN');
-            
-            if (!await this.hasEnoughSkulls(fromUserId, amount)) {
-                await client.query('ROLLBACK');
+            const { error: checkError, data: fromBalance } = await client
+                .from('skulls')
+                .select('balance')
+                .eq('user_id', fromUserId)
+                .single();
+
+            if (checkError || !fromBalance || fromBalance.balance < amount) {
                 return false;
             }
 
-            await client.query(
-                'UPDATE skulls SET balance = balance - $2 WHERE user_id = $1',
-                [fromUserId, amount]
-            );
-            
-            await client.query(
-                'INSERT INTO skulls (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = skulls.balance + $2',
-                [toUserId, amount]
-            );
+            const { error: removeError } = await client
+                .from('skulls')
+                .update({ balance: fromBalance.balance - amount })
+                .eq('user_id', fromUserId);
 
-            await client.query('COMMIT');
+            if (removeError) throw removeError;
+
+            const { error: addError } = await client
+                .from('skulls')
+                .upsert({ 
+                    user_id: toUserId,
+                    balance: amount 
+                }, {
+                    onConflict: 'user_id',
+                    target: ['user_id'],
+                    update: {
+                        balance: supabase.raw(`skulls.balance + ${amount}`)
+                    }
+                });
+
+            if (addError) throw addError;
             return true;
         } catch (error) {
-            await client.query('ROLLBACK');
             console.error('Transfer error:', error);
             return false;
-        } finally {
-            client.release();
         }
     }
 }
